@@ -68,14 +68,6 @@ public class BlankFragment extends Fragment {
 
     public void onViewCreated(View v, Bundle savedInstance) {
         super.onViewCreated(v,savedInstance);
-        replaceFragment(new inntro_1());
     }
 
-    public void replaceFragment(Fragment fragment) {
-        FragmentManager fragmentManager = requireActivity().getSupportFragmentManager();
-        FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
-        fragmentTransaction.setCustomAnimations(R.anim.slide_in,R.anim.slide_out);
-        fragmentTransaction.replace(R.id.fragment,fragment);
-        fragmentTransaction.commit();
-    }
 }
