@@ -58,6 +58,8 @@ public class cameraEmotion extends AppCompatActivity {
     ConstraintLayout emotionsCard;
     int imageSize = 224;
 
+    String state = "";
+
     int reqCode;
 
     Button nextBtn,repeatBtn;
@@ -89,7 +91,15 @@ public class cameraEmotion extends AppCompatActivity {
         repeatBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startActivity(new Intent(getApplicationContext(), cameraEmotion.class));
+              if (state.equals("photo")) {
+                 openCamera();
+              }
+              else if(state.equals("gallery")) {
+                  openGallery();
+              }
+              else {
+                  openCamera();
+              }
             }
         });
         hideComp();
@@ -127,9 +137,11 @@ public class cameraEmotion extends AppCompatActivity {
     public void checkIntent () {
         if (getIntent().getExtras()!= null) {
             if (getIntent().getExtras().getString("gallery") != null) {
-               openGallery();
+                state = "gallery";
+                openGallery();
             }
             else if (getIntent().getExtras() == null) {
+                state = "photo";
                 openCamera();
             }
         }
@@ -194,6 +206,7 @@ public class cameraEmotion extends AppCompatActivity {
     public void openCamera () {
         Intent open_camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
         startActivityForResult(open_camera,3);  //DEPRECATED
+        state = "photo";
     }
 
     //GALLERY
@@ -201,6 +214,7 @@ public class cameraEmotion extends AppCompatActivity {
     public void openGallery () {
         Intent open_gallery = new Intent(Intent.ACTION_PICK,MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
         startActivityForResult(open_gallery,1);
+        state = "gallery";
     }
 
     @Override
@@ -214,22 +228,23 @@ public class cameraEmotion extends AppCompatActivity {
                 imageTaked.setImageBitmap(photo);
                 photo = Bitmap.createScaledBitmap(photo, dimension, dimension, false);
                 classifyImage(photo);
+                state = "photo";
                 //  onCaptureImageResult(data);
             } else {
-
                 reqCode = 1;
                 Uri dat = data.getData();
                 Bitmap image = null;
                 try {
                     image = MediaStore.Images.Media.getBitmap(this.getContentResolver(), dat);
                     image = ThumbnailUtils.extractThumbnail(image, imageSize, imageSize);
-                    image = Bitmap.createScaledBitmap(image, imageSize, imageSize, false);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
                 imageTaked.setImageBitmap(image);
                 if (image != null) {
                     classifyImage(image);
+                    state = "gallery";
+
                 } else {
                     startActivity(new Intent(this, LangConfigMenu.class));
                 }
@@ -296,12 +311,13 @@ public class cameraEmotion extends AppCompatActivity {
             }
             String[] classes = {getString(R.string.result_angry), getString(R.string.result_disgusted), getString(R.string.result_happy),
                     getString(R.string.result_fearful), getString(R.string.result_neutral), getString(R.string.result_sad), getString(R.string.result_surprised)};
-            title.setText(title.getText() + " " + classes[maxPos]);
+            title.setText(getString(R.string.result_you_are) + " " + classes[maxPos]);
             String s = "";
             for (int i = 0; i < classes.length; i++) {
                 s += String.format("%s: %.1f%%\n", classes[i], confidences[i]);
             }
            em1.setText(s);
+
 
 
             // Releases model resources if no longer used.
