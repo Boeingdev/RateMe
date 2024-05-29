@@ -2,11 +2,16 @@ package com.emotion.rateme;
 
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.graphics.Bitmap;
+import android.graphics.Matrix;
+import android.graphics.PorterDuff;
+import android.media.ExifInterface;
 import android.media.ThumbnailUtils;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
@@ -41,6 +46,7 @@ import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 
 
 import java.io.ByteArrayOutputStream;
+import java.io.FileDescriptor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -51,7 +57,7 @@ import java.util.Objects;
 
 public class cameraEmotion extends AppCompatActivity {
 
-    ImageView imageTaked;
+    ImageView imageTaked,wave;
 
     TextView em1,title;
 
@@ -64,6 +70,8 @@ public class cameraEmotion extends AppCompatActivity {
 
     Button nextBtn,repeatBtn;
 
+    Uri dataPath;
+
 
 
     @Override
@@ -72,6 +80,7 @@ public class cameraEmotion extends AppCompatActivity {
         setContentView(R.layout.activity_camera_emotion);
         changeTheme();
         //COMP
+        wave = findViewById(R.id.imageView);
         imageTaked = findViewById(R.id.imageTaked);
         em1 = findViewById(R.id.em1);
         title = findViewById(R.id.title);
@@ -200,19 +209,17 @@ public class cameraEmotion extends AppCompatActivity {
         setAnim(repeatBtn,Techniques.StandUp,1200);
         repeatBtn.setVisibility(View.VISIBLE);
     }
-
     //CAMERA
-
     public void openCamera () {
         Intent open_camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
         startActivityForResult(open_camera,3);  //DEPRECATED
         state = "photo";
     }
-
     //GALLERY
 
     public void openGallery () {
         Intent open_gallery = new Intent(Intent.ACTION_PICK,MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+
         startActivityForResult(open_gallery,1);
         state = "gallery";
     }
@@ -222,25 +229,36 @@ public class cameraEmotion extends AppCompatActivity {
         if (resultCode == RESULT_OK) {
             if (requestCode == 3) {
                 reqCode = 3;
-                Bitmap photo = (Bitmap) data.getExtras().get("data");
+                 dataPath = data.getData();          //PATH
+                Bitmap photo = (Bitmap) Objects.requireNonNull(data.getExtras()).get("data");
                 int dimension = 224;
                 photo = ThumbnailUtils.extractThumbnail(photo, dimension, dimension);
                 imageTaked.setImageBitmap(photo);
                 photo = Bitmap.createScaledBitmap(photo, dimension, dimension, false);
+
                 classifyImage(photo);
                 state = "photo";
-                //  onCaptureImageResult(data);
-            } else {
+                //  onCaptureImageResult(data); NOT USING IT NOW
+            } else if (requestCode == 1){
                 reqCode = 1;
-                Uri dat = data.getData();
+                 dataPath = data.getData();
+                assert dataPath != null;
+                String path = dataPath.getPath();  //PATH
+                Log.d("CheckPath2",path);
                 Bitmap image = null;
                 try {
-                    image = MediaStore.Images.Media.getBitmap(this.getContentResolver(), dat);
+                    image = MediaStore.Images.Media.getBitmap(this.getContentResolver(), dataPath);
                     image = ThumbnailUtils.extractThumbnail(image, imageSize, imageSize);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
+                try {
+                    image =  rotateImageIfRequired(image,dataPath);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
                 imageTaked.setImageBitmap(image);
+
                 if (image != null) {
                     classifyImage(image);
                     state = "gallery";
@@ -250,12 +268,51 @@ public class cameraEmotion extends AppCompatActivity {
                 }
 
             }
+
+            else {
+                reqCode = 3;
+                Uri dat = data.getData();          //PATH
+                Bitmap photo = (Bitmap) data.getExtras().get("data");
+                int dimension = 224;
+                photo = ThumbnailUtils.extractThumbnail(photo, dimension, dimension);
+                imageTaked.setImageBitmap(photo);
+                photo = Bitmap.createScaledBitmap(photo, dimension, dimension, false);
+
+                classifyImage(photo);
+                state = "photo";
+            }
         }
         else {
             startActivity(new Intent(getApplicationContext(),LangConfigMenu.class));
         }
         super.onActivityResult(requestCode,resultCode,data);
 
+    }
+
+    private Bitmap rotateImageIfRequired(Bitmap img, Uri selectedImage) throws IOException {
+        ParcelFileDescriptor parcelFileDescriptor = getContentResolver().openFileDescriptor(selectedImage, "r");
+        FileDescriptor fileDescriptor = parcelFileDescriptor.getFileDescriptor();
+        ExifInterface ei = new ExifInterface(fileDescriptor);
+        int orientation = ei.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_ROTATE_90:
+                return rotateImage(img, 90);
+            case ExifInterface.ORIENTATION_ROTATE_180:
+                return rotateImage(img, 180);
+            case ExifInterface.ORIENTATION_ROTATE_270:
+                return rotateImage(img, 270);
+            default:
+                return img;
+        }
+    }
+
+    private static Bitmap rotateImage(Bitmap img, int degree) {
+        Matrix matrix = new Matrix();
+        matrix.postRotate(degree);
+        Bitmap rotatedImg = Bitmap.createBitmap(img, 0, 0, img.getWidth(), img.getHeight(), matrix, true);
+        img.recycle();
+        return rotatedImg;
     }
 
     private void onCaptureImageResult (Intent data) {
@@ -284,9 +341,9 @@ public class cameraEmotion extends AppCompatActivity {
             for (int i = 0; i < height; i++) {
                 for (int j = 0; j < width; j++) {
                     int val = intValues[pixel++]; // RGB
-                    byteBuffer.put((byte) ((val >> 16) & 0xFF));
-                    byteBuffer.put((byte) ((val >> 8) & 0xFF));
-                    byteBuffer.put((byte) (val & 0xFF));
+                    byteBuffer.put((byte) (val & 0xFF)); // B
+                    byteBuffer.put((byte) ((val >> 8) & 0xFF)); // G
+                    byteBuffer.put((byte) ((val >> 16) & 0xFF)); // R
                 }
             }
             inputFeature0.loadBuffer(byteBuffer);
@@ -316,6 +373,8 @@ public class cameraEmotion extends AppCompatActivity {
             for (int i = 0; i < classes.length; i++) {
                 s += String.format("%s: %.1f%%\n", classes[i], confidences[i]);
             }
+            //changeColorEmotion(classes[maxPos]);  NOT WORKING*
+            Log.d("MaxPos",classes[maxPos]);
            em1.setText(s);
 
 
@@ -326,6 +385,38 @@ public class cameraEmotion extends AppCompatActivity {
           Toast.makeText(this,getString(R.string.something_wrong),Toast.LENGTH_SHORT).show();
          }
     }
+
+     /*public void changeColorEmotion (String emotion) { *NOT WORKING*
+        switch (emotion) {
+            case "Happy":
+                wave.setColorFilter(ContextCompat.getColor(this,R.color.green1), PorterDuff.Mode.MULTIPLY);
+                break;
+            case "Angry":
+                wave.setColorFilter(ContextCompat.getColor(this,R.color.red), PorterDuff.Mode.MULTIPLY);
+                break;
+            case "Disgusted":
+                wave.setColorFilter(ContextCompat.getColor(this,R.color.blue1), PorterDuff.Mode.MULTIPLY);
+                break;
+            case "Fearful":
+                wave.setColorFilter(ContextCompat.getColor(this,R.color.purple), PorterDuff.Mode.MULTIPLY);
+                break;
+            case "Neutral":
+                wave.setColorFilter(ContextCompat.getColor(this,R.color.gray), PorterDuff.Mode.MULTIPLY);
+                break;
+            case "Sad":
+                wave.setColorFilter(ContextCompat.getColor(this,R.color.blue2), PorterDuff.Mode.MULTIPLY);
+                break;
+            case "Surprised":
+                wave.setColorFilter(ContextCompat.getColor(this,R.color.yellow1), PorterDuff.Mode.MULTIPLY);
+                break;
+
+            default:
+                wave.setColorFilter(ContextCompat.getColor(this,R.color.green1), PorterDuff.Mode.MULTIPLY);
+                break;
+
+        }
+
+    } */
 
 
 }
